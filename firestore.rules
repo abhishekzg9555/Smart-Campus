@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() &&
+        request.auth.token.email != null &&
+        request.auth.token.email == 'abhishekzg9555@gmail.com';
+    }
+
+    // Default match
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      // Allow reading user profiles
+      allow read: if true;
+      // Allow user profile creation and updates
+      allow create, update: if isAuthenticated() || isOwner(userId) || true;
+      allow delete: if isAdmin();
+    }
+
+    // Complaints collection
+    match /complaints/{complaintDocId} {
+      // Public read allows unauthenticated students/visitors on the Landing Page to track by Complaint ID
+      allow read: if true;
+      
+      // Allow creating complaints (both authenticated and guest/demo reporting)
+      allow create: if true;
+      
+      // Allow updates for status changes, department assignment, resolution photo, etc.
+      allow update: if true;
+      
+      // Allow deleting complaints (for demo cleanup or admin actions)
+      allow delete: if true;
+    }
+
+    // Notifications collection
+    match /notifications/{notificationId} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile containing authentication and role metadata.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "name": { "type": "string", "description": "Full name of student or staff" },
+        "email": { "type": "string", "description": "Campus email address" },
+        "studentId": { "type": "string", "description": "Student roll/registration ID" },
+        "role": { "type": "string", "enum": ["student", "admin"], "description": "Role in the system" },
+        "department": { "type": "string", "description": "Department name for staff" },
+        "phone": { "type": "string", "description": "Contact phone number" },
+        "createdAt": { "type": "string", "description": "ISO timestamp of account creation" }
+      },
+      "required": ["uid", "name", "email", "role", "createdAt"]
+    },
+    "Complaint": {
+      "title": "Complaint",
+      "description": "A campus infrastructure or maintenance complaint ticket.",
+      "type": "object",
+      "properties": {
+        "complaintId": { "type": "string", "description": "Human-readable complaint ID (e.g. CAMP-1001)" },
+        "studentUid": { "type": "string", "description": "UID of the reporting student" },
+        "studentId": { "type": "string", "description": "Student roll number" },
+        "studentName": { "type": "string", "description": "Name of student" },
+        "studentEmail": { "type": "string", "description": "Email of student" },
+        "building": { "type": "string", "description": "Campus building location" },
+        "floor": { "type": "string", "description": "Floor designation" },
+        "location": { "type": "string", "description": "Specific room or corridor" },
+        "category": { "type": "string", "description": "Category of problem" },
+        "priority": { "type": "string", "enum": ["Normal", "Medium", "High"], "description": "Urgency level" },
+        "title": { "type": "string", "description": "Short summary title" },
+        "description": { "type": "string", "description": "Detailed explanation of issue" },
+        "photoUrl": { "type": "string", "description": "URL of the uploaded issue photo" },
+        "status": { "type": "string", "enum": ["Reported", "Under Review", "Assigned", "In Progress", "Resolved"], "description": "Current status" },
+        "assignedDepartment": { "type": "string", "description": "Assigned maintenance team" },
+        "assignedStaff": { "type": "string", "description": "Name of technician" },
+        "adminComment": { "type": "string", "description": "Admin notes or action log" },
+        "resolutionPhotoUrl": { "type": "string", "description": "Photo proof of completed work" },
+        "resolutionComment": { "type": "string", "description": "Resolution summary" },
+        "createdAt": { "type": "string", "description": "ISO timestamp when reported" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp of last update" },
+        "resolvedAt": { "type": "string", "description": "ISO timestamp when resolved" },
+        "isDemoData": { "type": "boolean", "description": "Flag for seed demo data" }
+      },
+      "required": ["complaintId", "building", "floor", "location", "category", "priority", "description", "status", "createdAt", "updatedAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "System notification for complaint status updates and alerts.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Target user UID or 'admin'" },
+        "title": { "type": "string", "description": "Notification title" },
+        "message": { "type": "string", "description": "Notification message text" },
+        "complaintId": { "type": "string", "description": "Associated complaint reference ID" },
+        "complaintDocId": { "type": "string", "description": "Associated Firestore document ID" },
+        "read": { "type": "boolean", "description": "Read status" },
+        "type": { "type": "string", "description": "Notification event type" },
+        "createdAt": { "type": "string", "description": "ISO timestamp" }
+      },
+      "required": ["userId", "title", "message", "read", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Stores user profiles including students and maintenance admins."
+    },
+    "/complaints/{complaintDocId}": {
+      "schema": "Complaint",
+      "description": "Collection of all campus infrastructure issues and repair tracking records."
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User and admin alerts for complaint progress and assignment."
+    }
+  }
+}
