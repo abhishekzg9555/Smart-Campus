@@ -84,7 +84,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900">
-                  {userProfile?.name || 'Smart Campus User'}
+                  {userProfile?.name || 'Campus Care User'}
                 </h1>
                 <span
                   className={`text-xs font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${

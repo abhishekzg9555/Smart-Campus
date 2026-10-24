@@ -162,7 +162,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           onClick={onGoToHome}
           className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to Smart Campus Portal
+          <ArrowLeft className="w-3.5 h-3.5" /> Back to Campus Care Portal
         </button>
 
         <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/50">
@@ -190,7 +190,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             {activeTab === 'admin' ? <Shield className="w-6 h-6" /> : <GraduationCap className="w-6 h-6" />}
           </div>
           <h2 className="text-xl font-bold tracking-tight">
-            {activeTab === 'admin' ? 'Campus Admin Facility Portal' : 'Smart Campus Student Portal'}
+            {activeTab === 'admin' ? 'Campus Admin Facility Portal' : 'Campus Care Student Portal'}
           </h2>
           <p className="text-xs text-slate-300 mt-1">
             {activeTab === 'admin'
@@ -359,7 +359,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                     }
                   }}
                   placeholder={
-                    activeTab === 'admin' ? 'abhishekzg9555@gmail.com' : 'student@smartcampus.edu'
+                    activeTab === 'admin' ? 'abhishekzg9555@gmail.com' : 'student@campuscare.edu'
                   }
                   className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
                 />

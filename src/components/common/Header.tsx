@@ -69,7 +69,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-bold text-sm sm:text-base tracking-tight text-white">
-                  Smart Campus
+                  Campus Care
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 hidden sm:block">

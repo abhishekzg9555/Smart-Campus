@@ -175,7 +175,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <GraduationCap className="w-5 h-5" />
             </div>
             <div>
-              <span className="font-bold text-base tracking-tight text-white">Smart Campus</span>
+              <span className="font-bold text-base tracking-tight text-white">Campus Care</span>
             </div>
           </div>
 
@@ -451,7 +451,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <GraduationCap className="w-4 h-4" />
             </div>
             <span className="text-white font-semibold">
-              Smart Campus – Infrastructure & Maintenance Management System
+              Campus Care – Infrastructure & Maintenance Management System
             </span>
           </div>
           <p className="text-slate-400 text-center sm:text-right">

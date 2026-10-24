@@ -281,7 +281,7 @@ const AppContent: React.FC = () => {
         </div>
         <div className="flex items-center gap-2 text-sm font-semibold text-slate-300">
           <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-          <span>Authenticating Smart Campus System...</span>
+          <span>Authenticating Campus Care System...</span>
         </div>
       </div>
     );

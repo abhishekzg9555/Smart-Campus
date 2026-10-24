@@ -191,7 +191,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
           onClick={onGoToHome}
           className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to Smart Campus Portal
+          <ArrowLeft className="w-3.5 h-3.5" /> Back to Campus Care Portal
         </button>
 
         <span className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-400 bg-blue-950/60 px-2 py-0.5 rounded-full border border-blue-800/50">
@@ -304,7 +304,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
               type="button"
               onClick={() => {
                 setName('Priya Patel');
-                setEmail(`priya.${Math.floor(100 + Math.random() * 900)}@smartcampus.edu`);
+                setEmail(`priya.${Math.floor(100 + Math.random() * 900)}@campuscare.edu`);
                 setStudentId(`21CS${Math.floor(100 + Math.random() * 900)}`);
                 setBranch('Computer Science & Engineering (CSE)');
                 setMobileNo('9876543210');
@@ -349,7 +349,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="student@smartcampus.edu"
+                    placeholder="student@campuscare.edu"
                     className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
                   />
                 </div>

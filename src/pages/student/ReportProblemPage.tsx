@@ -142,7 +142,7 @@ export const ReportProblemPage: React.FC<ReportProblemPageProps> = ({
       }
 
       const effectiveUid = userProfile?.uid || user?.uid || 'student_guest';
-      const effectiveEmail = userProfile?.email || user?.email || 'student@smartcampus.edu';
+      const effectiveEmail = userProfile?.email || user?.email || 'student@campuscare.edu';
       const effectiveName = userProfile?.name || user?.displayName || 'Campus Student';
       const enteredRoll = rollNumberInput.trim().toUpperCase();
       const effectiveStudentId = userProfile?.rollNo || userProfile?.studentId || (enteredRoll || 'Pending Assignment');
