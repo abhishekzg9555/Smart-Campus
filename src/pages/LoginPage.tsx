@@ -13,7 +13,13 @@ import {
   CheckCircle2,
   ExternalLink,
   Globe,
+  Phone,
+  Smartphone,
+  KeyRound,
+  RotateCw,
+  MessageSquare,
 } from 'lucide-react';
+import { ConfirmationResult } from '../context/AuthContext';
 
 interface LoginPageProps {
   onGoToRegister: () => void;
@@ -33,6 +39,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     loginAdmin,
     signInWithGoogle,
     signInWithGoogleRedirect,
+    sendPhoneVerificationCode,
+    confirmPhoneVerificationCode,
     redirectError,
     clearRedirectError,
     isEmbeddedIframe,
@@ -40,6 +48,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'student' | 'admin'>(initialRoleTab);
+  const [authMethod, setAuthMethod] = useState<'email' | 'phone'>('email');
+  const [countryCode, setCountryCode] = useState('+91');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+  const [isSendingPhoneCode, setIsSendingPhoneCode] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [resendCountdown, setResendCountdown] = useState(0);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +69,74 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       setError(redirectError);
     }
   }, [redirectError]);
+
+  // Resend SMS countdown timer
+  React.useEffect(() => {
+    let timer: any;
+    if (resendCountdown > 0) {
+      timer = setTimeout(() => setResendCountdown((c) => c - 1), 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [resendCountdown]);
+
+  const handleSendPhoneCode = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setError(null);
+    setSuccessMessage(null);
+
+    const cleanDigits = phoneNumber.trim().replace(/\D/g, '');
+    if (!cleanDigits || cleanDigits.length < 7) {
+      setError('Please enter a valid mobile phone number (at least 7 to 10 digits).');
+      return;
+    }
+
+    const fullPhoneNumber = `${countryCode}${cleanDigits}`;
+    setIsSendingPhoneCode(true);
+
+    try {
+      const result = await sendPhoneVerificationCode(fullPhoneNumber, 'recaptcha-container');
+      setConfirmationResult(result);
+      setSuccessMessage(`SMS verification code sent to ${fullPhoneNumber}. Enter the 6-digit code below.`);
+      setResendCountdown(30);
+    } catch (err: any) {
+      console.error('Phone SMS error:', err);
+      setError(err.message || 'Failed to send SMS verification code.');
+    } finally {
+      setIsSendingPhoneCode(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!confirmationResult) return;
+    setError(null);
+
+    const cleanOtp = otpCode.trim().replace(/\s+/g, '');
+    if (!cleanOtp || cleanOtp.length < 6) {
+      setError('Please enter the 6-digit verification code from your SMS.');
+      return;
+    }
+
+    setIsVerifyingOtp(true);
+    try {
+      const profile = await confirmPhoneVerificationCode(confirmationResult, cleanOtp);
+      if (onLoginSuccess) {
+        onLoginSuccess(profile.role);
+      }
+    } catch (err: any) {
+      console.error('OTP verification error:', err);
+      setError(err.message || 'Invalid or expired SMS OTP code. Please try again.');
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  const handleResetPhoneFlow = () => {
+    setConfirmationResult(null);
+    setOtpCode('');
+    setError(null);
+    setSuccessMessage(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -323,110 +407,293 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             </button>
           </div>
 
+          {/* Hidden reCAPTCHA DOM Anchor */}
+          <div id="recaptcha-container"></div>
+
           <div className="flex items-center my-2">
             <div className="flex-1 border-t border-slate-200"></div>
             <span className="px-3 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-              Or with Email & Password
+              {activeTab === 'admin' ? 'Administrator Password Login' : 'Or Sign In with Phone or Email'}
             </span>
             <div className="flex-1 border-t border-slate-200"></div>
           </div>
 
+          {/* Student Auth Method Selector */}
+          {activeTab === 'student' && (
+            <div className="flex p-1 bg-slate-100 rounded-xl text-xs font-semibold gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMethod('email');
+                  setError(null);
+                }}
+                className={`flex-1 py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                  authMethod === 'email'
+                    ? 'bg-white text-blue-700 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Mail className="w-3.5 h-3.5 text-blue-600" />
+                <span>Email & Password</span>
+              </button>
 
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMethod('phone');
+                  setError(null);
+                }}
+                className={`flex-1 py-1.5 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                  authMethod === 'phone'
+                    ? 'bg-white text-blue-700 shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Smartphone className="w-3.5 h-3.5 text-blue-600" />
+                <span>Phone SMS OTP</span>
+              </button>
+            </div>
+          )}
 
-          {/* Login Form */}
-          <form onSubmit={handleSubmit} className="space-y-3.5">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                  {activeTab === 'admin' ? 'Administrator Email' : 'Student College Email'}
-                </label>
-                <span className="text-[10px] font-semibold text-slate-500">
-                  {activeTab === 'admin' ? 'Exclusive to abhishekzg9555@gmail.com' : 'Students Only'}
-                </span>
-              </div>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setEmail(val);
-                    if (val.trim().toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase() && activeTab !== 'admin') {
-                      setActiveTab('admin');
-                      setError(null);
-                    }
-                  }}
-                  placeholder={
-                    activeTab === 'admin' ? 'abhishekzg9555@gmail.com' : 'student@campuscare.edu'
-                  }
-                  className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
-                />
-              </div>
+          {/* ================= PHONE SMS AUTHENTICATION FLOW ================= */}
+          {activeTab === 'student' && authMethod === 'phone' ? (
+            <div className="space-y-4">
+              {!confirmationResult ? (
+                // Step 1: Request Phone SMS
+                <form onSubmit={handleSendPhoneCode} className="space-y-3.5">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                      Mobile Phone Number
+                    </label>
+                    <div className="flex gap-2">
+                      <select
+                        value={countryCode}
+                        onChange={(e) => setCountryCode(e.target.value)}
+                        className="w-28 px-2 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors cursor-pointer"
+                      >
+                        <option value="+91">🇮🇳 IN (+91)</option>
+                        <option value="+1">🇺🇸 US/CA (+1)</option>
+                        <option value="+44">🇬🇧 UK (+44)</option>
+                        <option value="+971">🇦🇪 UAE (+971)</option>
+                        <option value="+61">🇦🇺 AU (+61)</option>
+                        <option value="+65">🇸🇬 SG (+65)</option>
+                        <option value="+49">🇩🇪 DE (+49)</option>
+                      </select>
 
-              {/* Real-time notice if student tab has admin email */}
-              {activeTab === 'student' && email.trim().toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase() && (
-                <div className="mt-2 p-2.5 bg-blue-50 border border-blue-300 rounded-lg text-xs text-blue-900 flex items-start gap-2">
-                  <Shield className="w-4 h-4 shrink-0 text-blue-600 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="font-semibold">{DEFAULT_ADMIN_EMAIL} is the Campus Administrator account.</p>
-                    <p className="text-[11px] text-blue-800 mt-0.5">
-                      Submitting will automatically log you in to the Administrator Facility Portal.
-                    </p>
+                      <div className="relative flex-1">
+                        <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="tel"
+                          required
+                          value={phoneNumber}
+                          onChange={(e) => setPhoneNumber(e.target.value)}
+                          placeholder="e.g. 9876543210"
+                          maxLength={15}
+                          className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Test number helper */}
+                  <div className="p-2.5 bg-blue-50/70 border border-blue-200/70 rounded-xl flex items-center justify-between text-xs text-blue-900">
+                    <span className="text-[11px] text-slate-600">Testing phone login?</span>
                     <button
                       type="button"
                       onClick={() => {
-                        setActiveTab('admin');
+                        setCountryCode('+91');
+                        setPhoneNumber('9999999999');
                         setError(null);
                       }}
-                      className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-bold text-red-700 hover:text-red-900 underline"
+                      className="text-[11px] font-bold text-blue-700 hover:text-blue-900 underline"
                     >
-                      Switch to Admin Login tab &rarr;
+                      Fill Demo Test Number
                     </button>
                   </div>
-                </div>
-              )}
-            </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
-                />
-              </div>
-            </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    We will send a one-time 6-digit SMS verification code to this phone number. Standard SMS rates may apply.
+                  </p>
 
-            <button
-              type="submit"
-              disabled={isLoading || isGoogleLoading}
-              className={`w-full py-3 text-white font-bold rounded-xl text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 ${
-                activeTab === 'admin'
-                  ? 'bg-red-600 hover:bg-red-700 shadow-red-600/20'
-                  : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20'
-              }`}
-            >
-              {isLoading ? (
-                <span>Verifying with Firebase Authentication...</span>
+                  <button
+                    type="submit"
+                    disabled={isSendingPhoneCode}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm shadow-md shadow-blue-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {isSendingPhoneCode ? (
+                      <span>Sending SMS Verification Code...</span>
+                    ) : (
+                      <>
+                        <MessageSquare className="w-4 h-4" />
+                        <span>Send Verification Code (SMS)</span>
+                      </>
+                    )}
+                  </button>
+                </form>
               ) : (
-                <>
-                  <span>
-                    {activeTab === 'admin' ? 'Sign In as Administrator' : 'Sign In as Student'}
-                  </span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
+                // Step 2: Verify SMS OTP Code
+                <form onSubmit={handleVerifyOtp} className="space-y-3.5">
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
+                    <div>
+                      <span className="text-slate-500 block text-[10px] uppercase font-bold">Code Sent To</span>
+                      <span className="font-mono font-bold text-slate-800 text-sm">
+                        {countryCode} {phoneNumber}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleResetPhoneFlow}
+                      className="text-xs font-bold text-blue-600 hover:text-blue-800 underline"
+                    >
+                      Change Number
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                      6-Digit SMS Verification Code
+                    </label>
+                    <div className="relative">
+                      <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        required
+                        value={otpCode}
+                        onChange={(e) => setOtpCode(e.target.value)}
+                        placeholder="e.g. 123456"
+                        maxLength={6}
+                        className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-base font-mono tracking-widest font-bold text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-slate-500 pt-0.5">
+                    <span>Didn't receive SMS?</span>
+                    <button
+                      type="button"
+                      disabled={resendCountdown > 0 || isSendingPhoneCode}
+                      onClick={() => handleSendPhoneCode()}
+                      className="font-bold text-blue-600 hover:text-blue-800 hover:underline disabled:text-slate-400 disabled:no-underline inline-flex items-center gap-1"
+                    >
+                      <RotateCw className={`w-3 h-3 ${isSendingPhoneCode ? 'animate-spin' : ''}`} />
+                      <span>{resendCountdown > 0 ? `Resend SMS in ${resendCountdown}s` : 'Resend SMS Code'}</span>
+                    </button>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isVerifyingOtp}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm shadow-md shadow-blue-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {isVerifyingOtp ? (
+                      <span>Verifying SMS Code with Firebase...</span>
+                    ) : (
+                      <>
+                        <span>Verify & Sign In</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+                </form>
               )}
-            </button>
-          </form>
+            </div>
+          ) : (
+            // ================= EMAIL & PASSWORD FORM =================
+            <form onSubmit={handleSubmit} className="space-y-3.5">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                    {activeTab === 'admin' ? 'Administrator Email' : 'Student College Email'}
+                  </label>
+                  <span className="text-[10px] font-semibold text-slate-500">
+                    {activeTab === 'admin' ? 'Exclusive to abhishekzg9555@gmail.com' : 'Students Only'}
+                  </span>
+                </div>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEmail(val);
+                      if (val.trim().toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase() && activeTab !== 'admin') {
+                        setActiveTab('admin');
+                        setError(null);
+                      }
+                    }}
+                    placeholder={
+                      activeTab === 'admin' ? 'abhishekzg9555@gmail.com' : 'student@campuscare.edu'
+                    }
+                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                  />
+                </div>
+
+                {/* Real-time notice if student tab has admin email */}
+                {activeTab === 'student' && email.trim().toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase() && (
+                  <div className="mt-2 p-2.5 bg-blue-50 border border-blue-300 rounded-lg text-xs text-blue-900 flex items-start gap-2">
+                    <Shield className="w-4 h-4 shrink-0 text-blue-600 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-semibold">{DEFAULT_ADMIN_EMAIL} is the Campus Administrator account.</p>
+                      <p className="text-[11px] text-blue-800 mt-0.5">
+                        Submitting will automatically log you in to the Administrator Facility Portal.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('admin');
+                          setError(null);
+                        }}
+                        className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-bold text-red-700 hover:text-red-900 underline"
+                      >
+                        Switch to Admin Login tab &rarr;
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading || isGoogleLoading}
+                className={`w-full py-3 text-white font-bold rounded-xl text-sm shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50 ${
+                  activeTab === 'admin'
+                    ? 'bg-red-600 hover:bg-red-700 shadow-red-600/20'
+                    : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20'
+                }`}
+              >
+                {isLoading ? (
+                  <span>Verifying with Firebase Authentication...</span>
+                ) : (
+                  <>
+                    <span>
+                      {activeTab === 'admin' ? 'Sign In as Administrator' : 'Sign In as Student'}
+                    </span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </form>
+          )}
 
           {/* Student Footer Switch to Register */}
           {activeTab === 'student' && (

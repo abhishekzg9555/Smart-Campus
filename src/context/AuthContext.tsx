@@ -9,11 +9,16 @@ import {
   getRedirectResult,
   signOut,
   updateProfile,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  ConfirmationResult,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db, googleProvider, sanitizeFirestoreData } from '../firebase/config';
 import { UserProfile } from '../types';
 import firebaseConfig from '../../firebase-applet-config.json';
+
+export type { ConfirmationResult };
 
 export interface AuthContextType {
   user: User | null;
@@ -39,6 +44,8 @@ export interface AuthContextType {
   login: (email: string, pass: string) => Promise<UserProfile>;
   signInWithGoogle: (preferredRole?: 'student' | 'admin', useRedirect?: boolean) => Promise<UserProfile | void>;
   signInWithGoogleRedirect: (preferredRole?: 'student' | 'admin') => Promise<void>;
+  sendPhoneVerificationCode: (phoneNumber: string, containerId?: string) => Promise<ConfirmationResult>;
+  confirmPhoneVerificationCode: (confirmationResult: ConfirmationResult, code: string) => Promise<UserProfile>;
   updateStudentId: (studentId: string, department?: string) => Promise<UserProfile>;
   completeStudentOnboarding: (data: {
     rollNo: string;
@@ -115,7 +122,25 @@ export const handleAuthError = (err: any): AppAuthError => {
       userFriendly = `[auth/unauthorized-domain] Domain "${currentHost}" is not in Firebase's Authorized Domains list. Please add "${currentHost}" to Firebase Console > Authentication > Settings > Authorized domains.`;
       break;
     case 'auth/operation-not-allowed':
-      userFriendly = `[auth/operation-not-allowed] Google Sign-In or Email/Password is not enabled in Firebase Console. Go to Authentication > Sign-in method in Firebase Console and click Enable.`;
+      userFriendly = `[auth/operation-not-allowed] This sign-in provider (Phone, Google, or Email/Password) is not enabled in Firebase Console. Go to Authentication > Sign-in method in Firebase Console and click Enable.`;
+      break;
+    case 'auth/invalid-phone-number':
+      userFriendly = `[auth/invalid-phone-number] The phone number entered is invalid. Please format with your country code (e.g. +91 98765 43210 or +1 650 555 1234).`;
+      break;
+    case 'auth/missing-phone-number':
+      userFriendly = `[auth/missing-phone-number] Please enter a valid phone number.`;
+      break;
+    case 'auth/quota-exceeded':
+      userFriendly = `[auth/quota-exceeded] Daily SMS quota exceeded for this Firebase project. You can add test phone numbers in Firebase Console > Authentication > Sign-in method > Phone > Phone numbers for testing (e.g. +91 9999999999 with code 123456) to test without consuming quota.`;
+      break;
+    case 'auth/captcha-check-failed':
+      userFriendly = `[auth/captcha-check-failed] reCAPTCHA verification failed. Please try again.`;
+      break;
+    case 'auth/invalid-verification-code':
+      userFriendly = `[auth/invalid-verification-code] The SMS verification code is incorrect. Please check your SMS and enter the 6-digit OTP code again.`;
+      break;
+    case 'auth/code-expired':
+      userFriendly = `[auth/code-expired] The SMS verification code has expired. Please click Resend Code to receive a new OTP.`;
       break;
     case 'auth/popup-blocked':
       userFriendly = `[auth/popup-blocked] The Google Sign-In popup was blocked by your browser. Please allow popups for "${currentHost}".`;
@@ -183,21 +208,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const hasAllFields = Boolean(
           (data.rollNo || data.studentId) &&
           (data.branch || data.department) &&
-          (data.mobileNo || data.phone) &&
+          (data.mobileNo || data.phone || firebaseUser.phoneNumber) &&
           data.academicYear
         );
         const isOnboarded = role === 'admin' ? true : (data.isOnboarded ?? hasAllFields);
+        const effectivePhone = data.mobileNo || data.phone || firebaseUser.phoneNumber || undefined;
         const profile: UserProfile = {
           ...data,
           uid: firebaseUser.uid,
-          email: firebaseUser.email || data.email,
+          email: firebaseUser.email || data.email || (firebaseUser.phoneNumber ? `${firebaseUser.phoneNumber.replace('+', '')}@phone.campuscare.edu` : ''),
           role,
           rollNo: data.rollNo || data.studentId || undefined,
           studentId: data.studentId || data.rollNo || undefined,
           branch: data.branch || data.department || undefined,
           department: data.department || data.branch || undefined,
-          mobileNo: data.mobileNo || data.phone || undefined,
-          phone: data.phone || data.mobileNo || undefined,
+          mobileNo: effectivePhone,
+          phone: effectivePhone,
           academicYear: data.academicYear || undefined,
           isOnboarded,
         };
@@ -208,27 +234,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         persistLocalSession(profile);
         return profile;
       } else {
-        // If profile doesn't exist yet in Firestore (e.g., Google Sign-In)
+        // If profile doesn't exist yet in Firestore (e.g., Google or Phone SMS Sign-In)
         const nameFromEmail = firebaseUser.email?.split('@')[0].replace(/[._-]/g, ' ') || 'Campus User';
         const formattedName =
           firebaseUser.displayName ||
-          nameFromEmail.replace(/\b\w/g, (c) => c.toUpperCase());
+          (firebaseUser.phoneNumber
+            ? `Student (${firebaseUser.phoneNumber})`
+            : nameFromEmail.replace(/\b\w/g, (c) => c.toUpperCase()));
 
         // Construct Firestore document payload ensuring no undefined values
         const firestorePayload: Record<string, any> = {
           uid: firebaseUser.uid,
           name: isMasterAdmin ? 'Abhishek (Campus Admin)' : formattedName,
-          email: firebaseUser.email || '',
+          email: firebaseUser.email || (firebaseUser.phoneNumber ? `${firebaseUser.phoneNumber.replace('+', '')}@phone.campuscare.edu` : ''),
           role: isMasterAdmin ? 'admin' : 'student',
           isOnboarded: isMasterAdmin ? true : false,
           createdAt: new Date().toISOString(),
         };
 
+        if (firebaseUser.phoneNumber) {
+          firestorePayload.mobileNo = firebaseUser.phoneNumber;
+          firestorePayload.phone = firebaseUser.phoneNumber;
+        }
+
         if (isMasterAdmin) {
           firestorePayload.department = 'Central Campus Maintenance & Estate Cell';
         }
 
-        // For Google Sign-In, studentId, branch, mobileNo, academicYear are omitted until assigned.
         // Neither undefined nor random values are saved to Firestore.
         await setDoc(userDocRef, sanitizeFirestoreData(firestorePayload), { merge: true });
 
@@ -238,6 +270,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           email: firestorePayload.email,
           role: firestorePayload.role,
           department: firestorePayload.department,
+          phone: firestorePayload.phone,
+          mobileNo: firestorePayload.mobileNo,
           isOnboarded: firestorePayload.isOnboarded,
           createdAt: firestorePayload.createdAt,
         };
@@ -692,6 +726,90 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // 4c. PHONE SMS AUTHENTICATION
+  const sendPhoneVerificationCode = async (
+    phoneNumber: string,
+    containerId: string = 'recaptcha-container'
+  ): Promise<ConfirmationResult> => {
+    const cleanPhone = phoneNumber.trim().replace(/\s+/g, '');
+    if (!cleanPhone) {
+      throw new Error('Please enter your mobile phone number with country code (e.g. +91 98765 43210).');
+    }
+
+    try {
+      const containerEl = document.getElementById(containerId);
+      if (!containerEl) {
+        throw new Error(`reCAPTCHA container (#${containerId}) was not found in the DOM.`);
+      }
+
+      // Clear any prior verifier instance attached to window or element
+      if ((window as any).recaptchaVerifier) {
+        try {
+          (window as any).recaptchaVerifier.clear();
+        } catch {
+          // ignore
+        }
+        (window as any).recaptchaVerifier = null;
+      }
+
+      const verifier = new RecaptchaVerifier(auth, containerId, {
+        size: 'invisible',
+        callback: () => {
+          // reCAPTCHA solved
+        },
+        'expired-callback': () => {
+          console.warn('reCAPTCHA expired');
+        },
+      });
+
+      (window as any).recaptchaVerifier = verifier;
+
+      await verifier.render();
+
+      const confirmationResult = await signInWithPhoneNumber(auth, cleanPhone, verifier);
+      return confirmationResult;
+    } catch (err: any) {
+      console.error('Phone SMS send error:', err);
+      if ((window as any).recaptchaVerifier) {
+        try {
+          (window as any).recaptchaVerifier.clear();
+        } catch {
+          // ignore
+        }
+        (window as any).recaptchaVerifier = null;
+      }
+      throw handleAuthError(err);
+    }
+  };
+
+  const confirmPhoneVerificationCode = async (
+    confirmationResult: ConfirmationResult,
+    code: string
+  ): Promise<UserProfile> => {
+    const cleanCode = code.trim().replace(/\s+/g, '');
+    if (!cleanCode) {
+      throw new Error('Please enter the 6-digit SMS verification OTP code.');
+    }
+
+    try {
+      const result = await confirmationResult.confirm(cleanCode);
+      const firebaseUser = result.user;
+      setUser(firebaseUser);
+
+      const profile = await syncProfileFromFirestore(firebaseUser);
+      if (!profile) {
+        throw new Error('Unable to retrieve or initialize student profile. Please try again.');
+      }
+
+      setUserProfile(profile);
+      persistLocalSession(profile);
+      return profile;
+    } catch (err: any) {
+      console.error('Phone OTP verification error:', err);
+      throw handleAuthError(err);
+    }
+  };
+
   // 5. MASTER ADMIN INITIALIZATION / SETUP
   const setupAdminAccount = async (
     email: string = DEFAULT_ADMIN_EMAIL,
@@ -969,6 +1087,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         signInWithGoogle,
         signInWithGoogleRedirect,
+        sendPhoneVerificationCode,
+        confirmPhoneVerificationCode,
         updateStudentId,
         completeStudentOnboarding,
         updateStudentProfile,
