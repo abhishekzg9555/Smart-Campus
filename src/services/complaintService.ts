@@ -13,7 +13,7 @@ import {
   onSnapshot,
   writeBatch
 } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { db, sanitizeFirestoreData } from '../firebase/config';
 import { Complaint, ComplaintStatus, MaintenanceDepartment, Priority, Building, ProblemCategory } from '../types';
 import { createNotification } from './notificationService';
 
@@ -74,7 +74,7 @@ export async function createComplaint(input: CreateComplaintInput): Promise<{ id
   };
 
   // High-speed write (non-blocking for UI, with cloud sync)
-  const savePromise = setDoc(docRef, complaintData).catch((err) => {
+  const savePromise = setDoc(docRef, sanitizeFirestoreData(complaintData)).catch((err) => {
     console.warn('Firestore complaint write warning:', err);
   });
 

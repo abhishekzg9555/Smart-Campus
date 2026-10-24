@@ -28,4 +28,29 @@ export async function testConnection() {
 }
 testConnection();
 
+/**
+ * Strips all `undefined` fields from an object recursively.
+ * Firestore strictly rejects documents with `undefined` values.
+ */
+export function sanitizeFirestoreData<T extends Record<string, any>>(data: T): Partial<T> {
+  if (data === null || typeof data !== 'object') {
+    return data;
+  }
+  const result: Record<string, any> = {};
+  for (const [key, val] of Object.entries(data)) {
+    if (val !== undefined) {
+      if (val !== null && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+        if (val.constructor === Object) {
+          result[key] = sanitizeFirestoreData(val);
+        } else {
+          result[key] = val;
+        }
+      } else {
+        result[key] = val;
+      }
+    }
+  }
+  return result as Partial<T>;
+}
+
 export default app;

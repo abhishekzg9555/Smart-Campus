@@ -1,14 +1,26 @@
 export type UserRole = 'student' | 'admin';
 
+export type AcademicYear =
+  | '1st Year'
+  | '2nd Year'
+  | '3rd Year'
+  | '4th Year';
+
 export interface UserProfile {
   uid: string;
   name: string;
   email: string;
   studentId?: string;
+  rollNo?: string;
   role: UserRole;
   department?: string;
+  branch?: string;
   phone?: string;
+  mobileNo?: string;
+  academicYear?: AcademicYear | string;
+  isOnboarded?: boolean;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export type Building =

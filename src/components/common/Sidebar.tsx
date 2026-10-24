@@ -8,7 +8,6 @@ import {
   Bell,
   User,
   LogOut,
-  Database,
   ShieldAlert,
   GraduationCap
 } from 'lucide-react';
@@ -51,7 +50,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { path: '/admin/complaints', label: 'Manage Complaints', icon: FileText },
     { path: '/admin/analytics', label: 'Campus Analytics', icon: BarChart3 },
     { path: '/notifications', label: 'Notifications', icon: Bell, badge: unreadNotifsCount },
-    { path: '/admin/demo-manager', label: 'CEP Demo Data Tool', icon: Database },
     { path: '/admin/profile', label: 'Admin Profile', icon: User },
   ];
 

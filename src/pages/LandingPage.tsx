@@ -3,6 +3,7 @@ import {
   GraduationCap,
   ArrowRight,
   ShieldCheck,
+  Shield,
   Wrench,
   Sparkles,
   Zap,
@@ -29,6 +30,7 @@ interface LandingPageProps {
   onRegisterClick?: () => void;
   onReportClick?: () => void;
   onGoToLogin?: () => void;
+  onGoToAdminLogin?: () => void;
   onGoToRegister?: () => void;
   onGoToReport?: () => void;
   onTrackComplaint?: (complaint: Complaint) => void;
@@ -40,12 +42,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   onRegisterClick,
   onReportClick,
   onGoToLogin,
+  onGoToAdminLogin,
   onGoToRegister,
   onGoToReport,
   onTrackComplaint,
   complaints = [],
 }) => {
   const handleLogin = onLoginClick || onGoToLogin || (() => {});
+  const handleAdminLogin = onGoToAdminLogin || handleLogin;
   const handleRegister = onRegisterClick || onGoToRegister || (() => {});
   const handleReport = onReportClick || onGoToReport || handleLogin;
 
@@ -172,26 +176,32 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </div>
             <div>
               <span className="font-bold text-base tracking-tight text-white">Smart Campus</span>
-              <span className="ml-2 bg-blue-500/20 text-blue-300 border border-blue-400/30 text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase">
-                CEP Engineering
-              </span>
             </div>
           </div>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-3">
+            <button
+              type="button"
+              onClick={handleAdminLogin}
+              className="text-xs sm:text-sm font-bold text-red-400 hover:text-white px-2.5 sm:px-3 py-1.5 rounded-lg border border-red-500/40 hover:bg-red-600 transition-colors flex items-center gap-1.5 shadow-xs"
+              title="Campus Administrator Login (abhishekzg9555@gmail.com)"
+            >
+              <Shield className="w-3.5 h-3.5" />
+              <span>Admin Login</span>
+            </button>
             <button
               type="button"
               onClick={handleLogin}
-              className="text-xs sm:text-sm font-semibold text-slate-200 hover:text-white px-3.5 py-1.5 rounded-lg hover:bg-slate-800 transition-colors"
+              className="text-xs sm:text-sm font-semibold text-slate-200 hover:text-white px-2.5 sm:px-3 py-1.5 rounded-lg hover:bg-slate-800 transition-colors"
             >
-              Sign In
+              Student Login
             </button>
             <button
               type="button"
               onClick={handleRegister}
-              className="bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-semibold px-4 py-2 rounded-xl shadow-md shadow-blue-600/20 transition-all hover:-translate-y-0.5"
+              className="bg-blue-600 hover:bg-blue-500 text-white text-xs sm:text-sm font-semibold px-3 sm:px-4 py-2 rounded-xl shadow-md shadow-blue-600/20 transition-all hover:-translate-y-0.5"
             >
-              Student Register
+              Register
             </button>
           </div>
         </div>
@@ -200,10 +210,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       {/* Hero Section */}
       <section className="bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 text-white pt-16 pb-20 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
         <div className="max-w-5xl mx-auto text-center relative z-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-400/20 text-blue-300 text-xs font-semibold uppercase tracking-wider mb-6">
-            <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-            College Community Engagement Program (CEP)
-          </div>
 
           <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight sm:leading-none">
             Making our campus <br className="hidden sm:inline" />
@@ -270,14 +276,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-6">
             <span className="text-[11px] font-bold text-blue-700 uppercase tracking-widest bg-blue-50 px-3 py-1 rounded-full border border-blue-200">
-              Campus CEP Impact Metrics
+              Campus Impact Metrics
             </span>
             <p className="text-xs text-slate-500 mt-1">
               (Live data aggregated from campus maintenance database)
             </p>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
             <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 text-center">
               <p className="text-xs font-semibold text-slate-500 uppercase">Total Complaints</p>
               <h3 className="text-3xl font-extrabold text-slate-900 mt-1 font-mono">{totalCount}</h3>
@@ -287,11 +293,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <p className="text-xs font-semibold text-emerald-800 uppercase">Issues Resolved</p>
               <h3 className="text-3xl font-extrabold text-emerald-700 mt-1 font-mono">{resolvedCount}</h3>
               <p className="text-[11px] text-emerald-600 mt-1">Verified with after-photos</p>
-            </div>
-            <div className="bg-amber-50/60 p-5 rounded-2xl border border-amber-200 text-center">
-              <p className="text-xs font-semibold text-amber-800 uppercase">Active / In Progress</p>
-              <h3 className="text-3xl font-extrabold text-amber-700 mt-1 font-mono">{inProgressCount}</h3>
-              <p className="text-[11px] text-amber-600 mt-1">Field teams dispatched</p>
             </div>
             <div className="bg-blue-50/60 p-5 rounded-2xl border border-blue-200 text-center">
               <p className="text-xs font-semibold text-blue-800 uppercase">Avg Response Time</p>
@@ -454,7 +455,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </span>
           </div>
           <p className="text-slate-400 text-center sm:text-right">
-            College Community Engagement Program (CEP) • Engineering Initiative
+            Central Campus Infrastructure & Maintenance Cell
           </p>
         </div>
       </footer>

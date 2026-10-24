@@ -31,12 +31,12 @@ import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AdminComplaintsPage } from './pages/admin/AdminComplaintsPage';
 import { AdminComplaintManagePage } from './pages/admin/AdminComplaintManagePage';
 import { AdminAnalyticsPage } from './pages/admin/AdminAnalyticsPage';
-import { DemoDataManagerPage } from './pages/admin/DemoDataManagerPage';
 
 // Common Components
 import { Header } from './components/common/Header';
 import { Sidebar } from './components/common/Sidebar';
 import { QuickTrackModal } from './components/common/QuickTrackModal';
+import { StudentOnboardingModal } from './components/student/StudentOnboardingModal';
 import { GraduationCap, Loader2 } from 'lucide-react';
 
 const AppContent: React.FC = () => {
@@ -289,9 +289,11 @@ const AppContent: React.FC = () => {
 
   // 2. Unauthenticated Views
   if (!userProfile) {
-    if (currentPath === '/login') {
+    if (currentPath === '/login' || currentPath === '/login/admin') {
+      const isAdminInitial = currentPath === '/login/admin' || window.location.search.includes('role=admin');
       return (
         <LoginPage
+          initialRoleTab={isAdminInitial ? 'admin' : 'student'}
           onGoToRegister={() => navigate('/register')}
           onGoToHome={() => navigate('/')}
           onLoginSuccess={(role) => {
@@ -321,6 +323,7 @@ const AppContent: React.FC = () => {
     return (
       <LandingPage
         onLoginClick={() => navigate('/login')}
+        onGoToAdminLogin={() => navigate('/login/admin')}
         onRegisterClick={() => navigate('/register')}
         onReportClick={() => navigate('/login')}
         onGoToLogin={() => navigate('/login')}
@@ -422,7 +425,6 @@ const AppContent: React.FC = () => {
                   complaints={complaints}
                   onNavigateToComplaints={() => navigate('/admin/complaints')}
                   onNavigateToAnalytics={() => navigate('/admin/analytics')}
-                  onNavigateToDemoManager={() => navigate('/admin/demo-manager')}
                   onViewComplaint={handleViewComplaint}
                 />
               )}
@@ -451,12 +453,7 @@ const AppContent: React.FC = () => {
                 <AdminAnalyticsPage complaints={complaints} />
               )}
 
-              {currentPath === '/admin/demo-manager' && (
-                <DemoDataManagerPage
-                  complaints={complaints}
-                  onRefreshData={() => {}}
-                />
-              )}
+
 
               {currentPath === '/admin/profile' && (
                 <ProfilePage
@@ -485,6 +482,15 @@ const AppContent: React.FC = () => {
           )}
         </main>
       </div>
+
+      {/* First-Time Student Profile Onboarding Modal */}
+      {isStudent && !userProfile?.isOnboarded && (
+        <StudentOnboardingModal
+          onCompleted={() => {
+            navigate('/student/dashboard', true);
+          }}
+        />
+      )}
 
       {/* Global Quick Track Search Modal */}
       <QuickTrackModal

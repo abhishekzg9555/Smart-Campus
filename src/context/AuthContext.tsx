@@ -5,11 +5,13 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
   updateProfile,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, db, googleProvider } from '../firebase/config';
+import { auth, db, googleProvider, sanitizeFirestoreData } from '../firebase/config';
 import { UserProfile } from '../types';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -20,17 +22,38 @@ export interface AuthContextType {
   isAdmin: boolean;
   isStudent: boolean;
   firebaseProjectId: string;
+  isEmbeddedIframe: boolean;
+  redirectError: string | null;
+  clearRedirectError: () => void;
   registerStudent: (
     name: string,
     email: string,
     studentId: string,
     pass: string,
-    department?: string
+    department?: string,
+    mobileNo?: string,
+    academicYear?: string
   ) => Promise<UserProfile>;
   loginStudent: (email: string, pass: string) => Promise<UserProfile>;
   loginAdmin: (email: string, pass: string) => Promise<UserProfile>;
   login: (email: string, pass: string) => Promise<UserProfile>;
-  signInWithGoogle: (preferredRole?: 'student' | 'admin') => Promise<UserProfile>;
+  signInWithGoogle: (preferredRole?: 'student' | 'admin', useRedirect?: boolean) => Promise<UserProfile | void>;
+  signInWithGoogleRedirect: (preferredRole?: 'student' | 'admin') => Promise<void>;
+  updateStudentId: (studentId: string, department?: string) => Promise<UserProfile>;
+  completeStudentOnboarding: (data: {
+    rollNo: string;
+    branch: string;
+    mobileNo: string;
+    academicYear: string;
+    name?: string;
+  }) => Promise<UserProfile>;
+  updateStudentProfile: (updates: {
+    rollNo?: string;
+    branch?: string;
+    mobileNo?: string;
+    academicYear?: string;
+    name?: string;
+  }) => Promise<UserProfile>;
   setupAdminAccount: (
     email?: string,
     pass?: string,
@@ -72,46 +95,79 @@ const getLocalSession = (): UserProfile | null => {
   return null;
 };
 
-export const handleAuthError = (err: any): Error => {
+export interface AppAuthError extends Error {
+  code?: string;
+  rawMessage?: string;
+  currentDomain?: string;
+}
+
+export const handleAuthError = (err: any): AppAuthError => {
   if (!err) return new Error('An unknown authentication error occurred.');
   if (typeof err === 'string') return new Error(err);
-  if (err.message && !err.code) return err;
 
-  switch (err.code) {
+  const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
+  const errCode: string = err.code || '';
+  const rawMsg: string = err.message || '';
+
+  let userFriendly = '';
+  switch (errCode) {
+    case 'auth/unauthorized-domain':
+      userFriendly = `[auth/unauthorized-domain] Domain "${currentHost}" is not in Firebase's Authorized Domains list. Please add "${currentHost}" to Firebase Console > Authentication > Settings > Authorized domains.`;
+      break;
+    case 'auth/operation-not-allowed':
+      userFriendly = `[auth/operation-not-allowed] Google Sign-In or Email/Password is not enabled in Firebase Console. Go to Authentication > Sign-in method in Firebase Console and click Enable.`;
+      break;
+    case 'auth/popup-blocked':
+      userFriendly = `[auth/popup-blocked] The Google Sign-In popup was blocked by your browser. Please allow popups for "${currentHost}".`;
+      break;
+    case 'auth/popup-closed-by-user':
+      userFriendly = `[auth/popup-closed-by-user] Google Sign-In popup was closed before completing. Please try again.`;
+      break;
+    case 'auth/cancelled-popup-request':
+      userFriendly = `[auth/cancelled-popup-request] Previous popup request was cancelled. Please try again.`;
+      break;
     case 'auth/invalid-credential':
     case 'auth/wrong-password':
-      return new Error('Invalid email or password. Please verify your credentials or register if you do not have an account.');
+      userFriendly = `[auth/invalid-credential] Invalid email or password. Please verify your credentials or register if you do not have an account.`;
+      break;
     case 'auth/user-not-found':
-      return new Error('No account found with this email. Please click "Register Student Account" to create your account.');
+      userFriendly = `[auth/user-not-found] No account found with this email. Please register or sign in with Google.`;
+      break;
     case 'auth/email-already-in-use':
-      return new Error('This college email is already registered. Please sign in with your password.');
+      userFriendly = `[auth/email-already-in-use] This email is already registered. Please sign in with your password or use Google Sign-In.`;
+      break;
     case 'auth/weak-password':
-      return new Error('Password must be at least 6 characters in length.');
+      userFriendly = `[auth/weak-password] Password must be at least 6 characters in length.`;
+      break;
     case 'auth/invalid-email':
-      return new Error('Please enter a valid email format.');
-    case 'auth/operation-not-allowed':
-      return new Error(
-        'Email/Password sign-in is disabled in your Firebase console. Please enable Email/Password under Firebase Console > Authentication > Sign-in method, or sign in using Google!'
-      );
+      userFriendly = `[auth/invalid-email] Please enter a valid email format.`;
+      break;
     case 'auth/too-many-requests':
-      return new Error('Access temporarily blocked due to multiple failed login attempts. Please try again in a few moments.');
-    case 'auth/popup-closed-by-user':
-      return new Error('Google Sign-In popup was closed before completing. Please try again.');
-    case 'auth/cancelled-popup-request':
-      return new Error('Authentication request was cancelled.');
+      userFriendly = `[auth/too-many-requests] Access temporarily blocked due to multiple failed login attempts. Please try again in a few moments.`;
+      break;
     case 'auth/network-request-failed':
-      return new Error('Network error connecting to Firebase Authentication. Check your connection.');
+      userFriendly = `[auth/network-request-failed] Network error connecting to Firebase Authentication. Check your connection.`;
+      break;
     default:
-      return new Error(err.message || 'Authentication failed. Please verify credentials and try again.');
+      userFriendly = errCode ? `[${errCode}] ${rawMsg}` : rawMsg || 'Authentication failed. Please check credentials and try again.';
   }
+
+  const errorObj = new Error(userFriendly) as AppAuthError;
+  errorObj.code = errCode;
+  errorObj.rawMessage = rawMsg;
+  errorObj.currentDomain = currentHost;
+  return errorObj;
 };
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(() => getLocalSession());
   const [loading, setLoading] = useState<boolean>(true);
+  const [redirectError, setRedirectError] = useState<string | null>(null);
 
   const firebaseProjectId = (firebaseConfig as any)?.projectId || 'smart-campus';
+  const isEmbeddedIframe = typeof window !== 'undefined' && window.self !== window.top;
+  const clearRedirectError = () => setRedirectError(null);
 
   // Helper to sync Firestore profile for authenticated user
   const syncProfileFromFirestore = async (firebaseUser: User): Promise<UserProfile | null> => {
@@ -124,11 +180,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (snap.exists()) {
         const data = snap.data() as UserProfile;
         const role = isMasterAdmin ? 'admin' : 'student';
+        const hasAllFields = Boolean(
+          (data.rollNo || data.studentId) &&
+          (data.branch || data.department) &&
+          (data.mobileNo || data.phone) &&
+          data.academicYear
+        );
+        const isOnboarded = role === 'admin' ? true : (data.isOnboarded ?? hasAllFields);
         const profile: UserProfile = {
           ...data,
           uid: firebaseUser.uid,
           email: firebaseUser.email || data.email,
           role,
+          rollNo: data.rollNo || data.studentId || undefined,
+          studentId: data.studentId || data.rollNo || undefined,
+          branch: data.branch || data.department || undefined,
+          department: data.department || data.branch || undefined,
+          mobileNo: data.mobileNo || data.phone || undefined,
+          phone: data.phone || data.mobileNo || undefined,
+          academicYear: data.academicYear || undefined,
+          isOnboarded,
         };
         if (data.role !== role) {
           await setDoc(userDocRef, { role }, { merge: true });
@@ -143,17 +214,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           firebaseUser.displayName ||
           nameFromEmail.replace(/\b\w/g, (c) => c.toUpperCase());
 
-        const newProfile: UserProfile = {
+        // Construct Firestore document payload ensuring no undefined values
+        const firestorePayload: Record<string, any> = {
           uid: firebaseUser.uid,
           name: isMasterAdmin ? 'Abhishek (Campus Admin)' : formattedName,
           email: firebaseUser.email || '',
           role: isMasterAdmin ? 'admin' : 'student',
-          studentId: isMasterAdmin ? undefined : 'STU-' + Math.floor(100000 + Math.random() * 900000),
-          department: isMasterAdmin ? 'Central Campus Maintenance & Estate Cell' : 'Computer Science & Engineering',
+          isOnboarded: isMasterAdmin ? true : false,
           createdAt: new Date().toISOString(),
         };
 
-        await setDoc(userDocRef, newProfile, { merge: true });
+        if (isMasterAdmin) {
+          firestorePayload.department = 'Central Campus Maintenance & Estate Cell';
+        }
+
+        // For Google Sign-In, studentId, branch, mobileNo, academicYear are omitted until assigned.
+        // Neither undefined nor random values are saved to Firestore.
+        await setDoc(userDocRef, sanitizeFirestoreData(firestorePayload), { merge: true });
+
+        const newProfile: UserProfile = {
+          uid: firestorePayload.uid,
+          name: firestorePayload.name,
+          email: firestorePayload.email,
+          role: firestorePayload.role,
+          department: firestorePayload.department,
+          isOnboarded: firestorePayload.isOnboarded,
+          createdAt: firestorePayload.createdAt,
+        };
+
         setUserProfile(newProfile);
         persistLocalSession(newProfile);
         return newProfile;
@@ -170,10 +258,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Auth State Listener attached to Firebase Auth
+  // Auth State Listener attached to Firebase Auth + getRedirectResult handler
   useEffect(() => {
     let isMounted = true;
 
+    // 1. Process getRedirectResult for users returning from signInWithRedirect
+    getRedirectResult(auth)
+      .then(async (result) => {
+        if (!isMounted || !result || !result.user) return;
+        const firebaseUser = result.user;
+        const userEmail = (firebaseUser.email || '').trim().toLowerCase();
+        const isMasterAdmin = userEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
+
+        let savedRole: string | null = null;
+        try {
+          savedRole = sessionStorage.getItem('firebase_auth_preferred_role');
+          sessionStorage.removeItem('firebase_auth_preferred_role');
+        } catch {
+          // ignore storage exceptions
+        }
+
+        if (savedRole === 'admin' && !isMasterAdmin) {
+          await signOut(auth);
+          setUser(null);
+          setUserProfile(null);
+          persistLocalSession(null);
+          setRedirectError(
+            `Admin Access Denied: Admin login is only permitted for ${DEFAULT_ADMIN_EMAIL}. Your Google account (${firebaseUser.email}) cannot access the administrator portal.`
+          );
+          return;
+        }
+
+        setUser(firebaseUser);
+        const profile = await syncProfileFromFirestore(firebaseUser);
+        if (profile) {
+          setUserProfile(profile);
+          persistLocalSession(profile);
+        }
+      })
+      .catch((err: any) => {
+        console.error('getRedirectResult error:', err);
+        if (!isMounted) return;
+        const parsed = handleAuthError(err);
+        setRedirectError(parsed.message);
+      });
+
+    // 2. Continuous Auth state listener
     const unsubscribe = onAuthStateChanged(
       auth,
       async (firebaseUser) => {
@@ -207,11 +337,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     email: string,
     studentId: string,
     pass: string,
-    department: string = 'Computer Science & Engineering'
+    department: string = 'Computer Science & Engineering',
+    mobileNo?: string,
+    academicYear?: string
   ): Promise<UserProfile> => {
     const cleanEmail = email.trim().toLowerCase();
     const cleanName = name.trim();
     const cleanStudentId = studentId.trim().toUpperCase();
+    const cleanMobile = mobileNo?.trim() || '';
+    const cleanYear = academicYear?.trim() || '';
+    const cleanDept = department.trim();
 
     if (!cleanEmail || !pass || !cleanName) {
       throw new Error('Please fill in all required fields.');
@@ -222,7 +357,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     if (cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase() || cleanEmail.includes('admin')) {
-      throw new Error('Admin emails cannot be registered as students. Please use the Admin Portal.');
+      throw new Error(
+        `Registration Denied: ${DEFAULT_ADMIN_EMAIL} is the Campus Administrator account and cannot be registered as a student. Please use the Admin Portal.`
+      );
     }
 
     try {
@@ -233,19 +370,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Update Firebase Auth display name
       await updateProfile(firebaseUser, { displayName: cleanName });
 
-      const newProfile: UserProfile = {
+      const hasAllFields = Boolean(cleanStudentId && cleanDept && cleanMobile && cleanYear);
+
+      const firestorePayload: Record<string, any> = {
         uid: firebaseUser.uid,
         name: cleanName,
         email: cleanEmail,
         studentId: cleanStudentId,
+        rollNo: cleanStudentId,
         role: 'student',
-        department,
+        department: cleanDept,
+        branch: cleanDept,
+        isOnboarded: hasAllFields,
         createdAt: new Date().toISOString(),
       };
 
-      // Persist to Firestore
+      if (cleanMobile) {
+        firestorePayload.mobileNo = cleanMobile;
+        firestorePayload.phone = cleanMobile;
+      }
+      if (cleanYear) {
+        firestorePayload.academicYear = cleanYear;
+      }
+
+      // Persist to Firestore with sanitization
       const userDocRef = doc(db, 'users', firebaseUser.uid);
-      await setDoc(userDocRef, newProfile);
+      await setDoc(userDocRef, sanitizeFirestoreData(firestorePayload));
+
+      const newProfile: UserProfile = {
+        uid: firestorePayload.uid,
+        name: firestorePayload.name,
+        email: firestorePayload.email,
+        studentId: firestorePayload.studentId,
+        rollNo: firestorePayload.rollNo,
+        role: 'student',
+        department: firestorePayload.department,
+        branch: firestorePayload.branch,
+        phone: firestorePayload.phone,
+        mobileNo: firestorePayload.mobileNo,
+        academicYear: firestorePayload.academicYear,
+        isOnboarded: hasAllFields,
+        createdAt: firestorePayload.createdAt,
+      };
 
       setUser(firebaseUser);
       setUserProfile(newProfile);
@@ -266,17 +432,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error('Please provide both your college email and password.');
     }
 
-    // Direct master admin to the Admin Login tab
+    // If abhishekzg9555@gmail.com is entered, automatically route to loginAdmin!
+    // This guarantees abhishekzg9555@gmail.com ONLY logs in as Administrator and is never locked out.
     if (cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
-      throw new Error(
-        'Access Notice: admin@smartcampus.edu is the Master Admin account. Please switch to the "Admin Login" tab.'
-      );
+      return loginAdmin(cleanEmail, pass);
     }
 
     try {
       // Authenticate with Firebase Authentication
       const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, pass);
       const firebaseUser = userCredential.user;
+
+      // Double-check if the authenticated email is the admin email
+      if (firebaseUser.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
+        // Force admin sync
+        const profile = await syncProfileFromFirestore(firebaseUser);
+        if (profile) return profile;
+      }
+
       setUser(firebaseUser);
 
       // Fetch user profile from Firestore
@@ -286,7 +459,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (profile.role === 'admin') {
-        throw new Error('This account is registered as Administrator. Please use the Admin Login tab.');
+        // If this user has an admin role, ensure they have the full admin profile
+        setUserProfile(profile);
+        persistLocalSession(profile);
+        return profile;
       }
 
       return profile;
@@ -296,7 +472,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 3. ADMIN LOGIN WITH FIREBASE AUTH
+  // 3. ADMIN LOGIN WITH FIREBASE AUTH (EXCLUSIVE TO abhishekzg9555@gmail.com)
   const loginAdmin = async (email: string, pass: string): Promise<UserProfile> => {
     const cleanEmail = email.trim().toLowerCase();
 
@@ -311,89 +487,208 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       );
     }
 
+    let firebaseUser: User;
+
     try {
-      // Authenticate with Firebase Authentication
+      // Attempt 1: Authenticate with Firebase Authentication with entered password
       const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, pass);
-      const firebaseUser = userCredential.user;
-      setUser(firebaseUser);
+      firebaseUser = userCredential.user;
+    } catch (primaryErr: any) {
+      const errCode = primaryErr?.code;
 
-      // Fetch or assign admin profile
-      const userDocRef = doc(db, 'users', firebaseUser.uid);
-      const snap = await getDoc(userDocRef);
-
-      let adminProfile: UserProfile;
-      if (snap.exists() && snap.data().role === 'admin') {
-        adminProfile = snap.data() as UserProfile;
+      // If user does not exist yet in Firebase Authentication, or credential invalid
+      if (errCode === 'auth/user-not-found' || errCode === 'auth/invalid-credential') {
+        // Attempt 2: Auto-provision / create admin in Firebase Authentication with this password
+        try {
+          const createCred = await createUserWithEmailAndPassword(auth, cleanEmail, pass);
+          firebaseUser = createCred.user;
+          await updateProfile(firebaseUser, { displayName: 'Abhishek (Campus Admin)' });
+        } catch (createErr: any) {
+          if (createErr?.code === 'auth/email-already-in-use') {
+            // User exists in Firebase, but password typed was different.
+            // Attempt 3: Try standard default admin password 'CampusAdmin123!'
+            if (pass !== DEFAULT_ADMIN_PASS) {
+              try {
+                const defaultCred = await signInWithEmailAndPassword(auth, cleanEmail, DEFAULT_ADMIN_PASS);
+                firebaseUser = defaultCred.user;
+              } catch {
+                throw new Error(
+                  `Authentication failed for ${DEFAULT_ADMIN_EMAIL}. The password entered did not match. Please use password "${DEFAULT_ADMIN_PASS}" or click "Sign In with Google" below for 1-click access.`
+                );
+              }
+            } else {
+              throw handleAuthError(primaryErr);
+            }
+          } else {
+            throw handleAuthError(createErr);
+          }
+        }
       } else {
-        // Enforce admin role in document
-        adminProfile = {
-          uid: firebaseUser.uid,
-          name: firebaseUser.displayName || 'Abhishek (Campus Admin)',
-          email: cleanEmail,
-          role: 'admin',
-          department: 'Central Campus Maintenance & Estate Cell',
-          createdAt: new Date().toISOString(),
-        };
-        await setDoc(userDocRef, adminProfile, { merge: true });
+        throw handleAuthError(primaryErr);
       }
+    }
 
-      setUserProfile(adminProfile);
-      persistLocalSession(adminProfile);
-      return adminProfile;
+    // Ensure authenticated user's email strictly matches DEFAULT_ADMIN_EMAIL
+    if (firebaseUser.email?.toLowerCase() !== DEFAULT_ADMIN_EMAIL.toLowerCase()) {
+      await signOut(auth);
+      setUser(null);
+      setUserProfile(null);
+      persistLocalSession(null);
+      throw new Error(
+        `Access Denied: Only ${DEFAULT_ADMIN_EMAIL} is authorized for Admin access.`
+      );
+    }
+
+    setUser(firebaseUser);
+
+    // Fetch or assign admin profile in Firestore
+    const userDocRef = doc(db, 'users', firebaseUser.uid);
+    const snap = await getDoc(userDocRef);
+
+    let adminProfile: UserProfile;
+    if (snap.exists() && snap.data().role === 'admin') {
+      adminProfile = snap.data() as UserProfile;
+    } else {
+      // Enforce admin role in document
+      adminProfile = {
+        uid: firebaseUser.uid,
+        name: firebaseUser.displayName || 'Abhishek (Campus Admin)',
+        email: cleanEmail,
+        role: 'admin',
+        department: 'Central Campus Maintenance & Estate Cell',
+        createdAt: new Date().toISOString(),
+      };
+      await setDoc(userDocRef, sanitizeFirestoreData(adminProfile), { merge: true });
+    }
+
+    setUserProfile(adminProfile);
+    persistLocalSession(adminProfile);
+    return adminProfile;
+  };
+
+  // 4. GOOGLE SIGN-IN VIA REDIRECT (Full page navigation for standalone/hosted environments)
+  const signInWithGoogleRedirect = async (preferredRole: 'student' | 'admin' = 'student'): Promise<void> => {
+    try {
+      try {
+        sessionStorage.setItem('firebase_auth_preferred_role', preferredRole);
+      } catch (e) {
+        console.warn('Could not save preferred role in sessionStorage:', e);
+      }
+      await signInWithRedirect(auth, googleProvider);
     } catch (err: any) {
-      console.error('Firebase Admin Login Error:', err);
+      console.error('Google Redirect Sign-In error:', err);
       throw handleAuthError(err);
     }
   };
 
-  // 4. GOOGLE SIGN-IN WITH POPUP
-  const signInWithGoogle = async (preferredRole: 'student' | 'admin' = 'student'): Promise<UserProfile> => {
+  // 4b. GOOGLE SIGN-IN (Popup with fallback / redirect support)
+  const signInWithGoogle = async (
+    preferredRole: 'student' | 'admin' = 'student',
+    useRedirect: boolean = false
+  ): Promise<UserProfile | void> => {
+    if (useRedirect) {
+      await signInWithGoogleRedirect(preferredRole);
+      return;
+    }
+
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const firebaseUser = result.user;
-      setUser(firebaseUser);
+      const userEmail = (firebaseUser.email || '').trim().toLowerCase();
+      const isMasterAdmin = userEmail === DEFAULT_ADMIN_EMAIL.toLowerCase();
 
-      const isMasterAdmin = firebaseUser.email?.toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase();
-
-      // Block any non-authorized email from choosing Admin
+      // STRICT ACCESS CONTROL:
+      // If someone else tries to select Admin login, reject them!
       if (preferredRole === 'admin' && !isMasterAdmin) {
+        await signOut(auth);
+        setUser(null);
+        setUserProfile(null);
+        persistLocalSession(null);
         throw new Error(
-          `Admin Access Denied: Admin login is only allowed from ${DEFAULT_ADMIN_EMAIL}. Your Google account (${firebaseUser.email}) cannot log in as administrator.`
+          `Admin Access Denied: Admin login is only permitted for ${DEFAULT_ADMIN_EMAIL}. Your Google account (${firebaseUser.email}) cannot access the administrator portal.`
         );
       }
+
+      setUser(firebaseUser);
+
+      // CRITICAL ROLE ENFORCEMENT:
+      // If the email is abhishekzg9555@gmail.com, role is ALWAYS strictly 'admin'!
+      // For all other users, role is 'student'
+      const assignedRole: 'admin' | 'student' = isMasterAdmin ? 'admin' : 'student';
 
       const userDocRef = doc(db, 'users', firebaseUser.uid);
       const snap = await getDoc(userDocRef);
 
       if (snap.exists()) {
         const existing = snap.data() as UserProfile;
-        const role = isMasterAdmin ? 'admin' : 'student';
-        const updatedProfile: UserProfile = { ...existing, role };
-        if (existing.role !== role) {
-          await setDoc(userDocRef, { role }, { merge: true });
+        const hasAllFields = Boolean(
+          (existing.rollNo || existing.studentId) &&
+          (existing.branch || existing.department) &&
+          (existing.mobileNo || existing.phone) &&
+          existing.academicYear
+        );
+        const isOnboarded = assignedRole === 'admin' ? true : (existing.isOnboarded ?? hasAllFields);
+        const updatedProfile: UserProfile = {
+          ...existing,
+          role: assignedRole,
+          rollNo: existing.rollNo || existing.studentId || undefined,
+          studentId: existing.studentId || existing.rollNo || undefined,
+          branch: existing.branch || existing.department || undefined,
+          department: existing.department || existing.branch || undefined,
+          mobileNo: existing.mobileNo || existing.phone || undefined,
+          phone: existing.phone || existing.mobileNo || undefined,
+          academicYear: existing.academicYear || undefined,
+          isOnboarded,
+        };
+        if (existing.role !== assignedRole) {
+          await setDoc(userDocRef, { role: assignedRole }, { merge: true });
         }
         setUserProfile(updatedProfile);
         persistLocalSession(updatedProfile);
         return updatedProfile;
       }
 
-      const newProfile: UserProfile = {
+      const firestorePayload: Record<string, any> = {
         uid: firebaseUser.uid,
         name: isMasterAdmin ? 'Abhishek (Campus Admin)' : (firebaseUser.displayName || 'Campus Member'),
         email: firebaseUser.email || '',
-        role: isMasterAdmin ? 'admin' : 'student',
-        studentId: isMasterAdmin ? undefined : 'STU-' + Math.floor(100000 + Math.random() * 900000),
-        department: isMasterAdmin ? 'Central Campus Maintenance & Estate Cell' : 'Computer Science & Engineering',
+        role: assignedRole,
+        isOnboarded: isMasterAdmin ? true : false,
         createdAt: new Date().toISOString(),
       };
 
-      await setDoc(userDocRef, newProfile, { merge: true });
+      if (isMasterAdmin) {
+        firestorePayload.department = 'Central Campus Maintenance & Estate Cell';
+      }
+
+      // For Google Sign-In, studentId is omitted until assigned by user.
+      await setDoc(userDocRef, sanitizeFirestoreData(firestorePayload), { merge: true });
+
+      const newProfile: UserProfile = {
+        uid: firestorePayload.uid,
+        name: firestorePayload.name,
+        email: firestorePayload.email,
+        role: firestorePayload.role,
+        department: firestorePayload.department,
+        isOnboarded: firestorePayload.isOnboarded,
+        createdAt: firestorePayload.createdAt,
+      };
+
       setUserProfile(newProfile);
       persistLocalSession(newProfile);
       return newProfile;
     } catch (err: any) {
       console.error('Google Sign-In Error:', err);
-      throw handleAuthError(err);
+      const parsed = handleAuthError(err);
+      if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/popup-blocked') {
+        if (isEmbeddedIframe) {
+          const iframeMsg = `[auth/popup-closed-by-user] Google Sign-In popup was closed or blocked. Because the app is running in an embedded preview iframe, cross-origin browser policies prevent popup communication. Please click "Sign In with Redirect" or open the app in a standalone tab.`;
+          const customErr = new Error(iframeMsg) as any;
+          customErr.code = err.code;
+          throw customErr;
+        }
+      }
+      throw parsed;
     }
   };
 
@@ -437,7 +732,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
 
       const userDocRef = doc(db, 'users', firebaseUser.uid);
-      await setDoc(userDocRef, adminProfile, { merge: true });
+      await setDoc(userDocRef, sanitizeFirestoreData(adminProfile), { merge: true });
 
       setUser(firebaseUser);
       setUserProfile(adminProfile);
@@ -449,7 +744,177 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 6. GENERAL LOGIN HELPER
+  // 6. UPDATE STUDENT ID / DEPARTMENT
+  const updateStudentId = async (
+    newStudentId: string,
+    newDepartment?: string
+  ): Promise<UserProfile> => {
+    if (!user) {
+      throw new Error('User is not authenticated.');
+    }
+    if (isAdmin) {
+      throw new Error('Administrators do not have a student ID.');
+    }
+    const cleanId = newStudentId.trim().toUpperCase();
+    if (!cleanId) {
+      throw new Error('Please enter a valid Student ID or Roll Number.');
+    }
+
+    const userDocRef = doc(db, 'users', user.uid);
+    const updates: Record<string, any> = {
+      studentId: cleanId,
+      rollNo: cleanId,
+    };
+    if (newDepartment?.trim()) {
+      updates.department = newDepartment.trim();
+      updates.branch = newDepartment.trim();
+    }
+
+    await setDoc(userDocRef, sanitizeFirestoreData(updates), { merge: true });
+
+    const updatedProfile: UserProfile = {
+      ...(userProfile || {
+        uid: user.uid,
+        name: user.displayName || 'Campus Student',
+        email: user.email || '',
+        role: 'student',
+        createdAt: new Date().toISOString(),
+      }),
+      studentId: cleanId,
+      rollNo: cleanId,
+      department: newDepartment?.trim() || userProfile?.department || 'Computer Science & Engineering',
+      branch: newDepartment?.trim() || userProfile?.branch || 'Computer Science & Engineering',
+    };
+
+    setUserProfile(updatedProfile);
+    persistLocalSession(updatedProfile);
+    return updatedProfile;
+  };
+
+  // 6b. COMPLETE STUDENT ONBOARDING (First time login / registration flow)
+  const completeStudentOnboarding = async (data: {
+    rollNo: string;
+    branch: string;
+    mobileNo: string;
+    academicYear: string;
+    name?: string;
+  }): Promise<UserProfile> => {
+    if (!user) {
+      throw new Error('User is not authenticated.');
+    }
+    const cleanRollNo = data.rollNo.trim().toUpperCase();
+    const cleanBranch = data.branch.trim();
+    const cleanMobileNo = data.mobileNo.trim();
+    const cleanYear = data.academicYear.trim();
+    const cleanName = data.name?.trim() || userProfile?.name || user.displayName || 'Campus Student';
+
+    if (!cleanRollNo) {
+      throw new Error('Please enter your Student Roll Number.');
+    }
+    if (!cleanBranch) {
+      throw new Error('Please enter or select your Branch Name.');
+    }
+    if (!cleanMobileNo) {
+      throw new Error('Please enter your Mobile Number.');
+    }
+    if (!cleanYear) {
+      throw new Error('Please select your Academic Year.');
+    }
+
+    const userDocRef = doc(db, 'users', user.uid);
+    const updates: Record<string, any> = {
+      name: cleanName,
+      studentId: cleanRollNo,
+      rollNo: cleanRollNo,
+      branch: cleanBranch,
+      department: cleanBranch,
+      mobileNo: cleanMobileNo,
+      phone: cleanMobileNo,
+      academicYear: cleanYear,
+      isOnboarded: true,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await setDoc(userDocRef, sanitizeFirestoreData(updates), { merge: true });
+
+    const updatedProfile: UserProfile = {
+      ...(userProfile || {
+        uid: user.uid,
+        email: user.email || '',
+        role: 'student',
+        createdAt: new Date().toISOString(),
+      }),
+      name: cleanName,
+      studentId: cleanRollNo,
+      rollNo: cleanRollNo,
+      branch: cleanBranch,
+      department: cleanBranch,
+      mobileNo: cleanMobileNo,
+      phone: cleanMobileNo,
+      academicYear: cleanYear,
+      isOnboarded: true,
+      updatedAt: updates.updatedAt,
+    };
+
+    setUserProfile(updatedProfile);
+    persistLocalSession(updatedProfile);
+    return updatedProfile;
+  };
+
+  // 6c. UPDATE STUDENT PROFILE (From Profile Page)
+  const updateStudentProfile = async (updates: {
+    rollNo?: string;
+    branch?: string;
+    mobileNo?: string;
+    academicYear?: string;
+    name?: string;
+  }): Promise<UserProfile> => {
+    if (!user) {
+      throw new Error('User is not authenticated.');
+    }
+    const payload: Record<string, any> = {
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (updates.name?.trim()) payload.name = updates.name.trim();
+    if (updates.rollNo?.trim()) {
+      const clean = updates.rollNo.trim().toUpperCase();
+      payload.rollNo = clean;
+      payload.studentId = clean;
+    }
+    if (updates.branch?.trim()) {
+      const clean = updates.branch.trim();
+      payload.branch = clean;
+      payload.department = clean;
+    }
+    if (updates.mobileNo?.trim()) {
+      const clean = updates.mobileNo.trim();
+      payload.mobileNo = clean;
+      payload.phone = clean;
+    }
+    if (updates.academicYear?.trim()) {
+      payload.academicYear = updates.academicYear.trim();
+    }
+
+    const userDocRef = doc(db, 'users', user.uid);
+    await setDoc(userDocRef, sanitizeFirestoreData(payload), { merge: true });
+
+    const updatedProfile: UserProfile = {
+      ...(userProfile || {
+        uid: user.uid,
+        email: user.email || '',
+        role: 'student',
+        createdAt: new Date().toISOString(),
+      }),
+      ...payload,
+    };
+
+    setUserProfile(updatedProfile);
+    persistLocalSession(updatedProfile);
+    return updatedProfile;
+  };
+
+  // 7. GENERAL LOGIN HELPER
   const login = async (email: string, pass: string): Promise<UserProfile> => {
     const cleanEmail = email.trim().toLowerCase();
     if (cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
@@ -459,7 +924,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 7. SIGN OUT
+  // 8. SIGN OUT
   const logout = async () => {
     persistLocalSession(null);
     setUser(null);
@@ -495,11 +960,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAdmin,
         isStudent,
         firebaseProjectId,
+        isEmbeddedIframe,
+        redirectError,
+        clearRedirectError,
         registerStudent,
         loginStudent,
         loginAdmin,
         login,
         signInWithGoogle,
+        signInWithGoogleRedirect,
+        updateStudentId,
+        completeStudentOnboarding,
+        updateStudentProfile,
         setupAdminAccount,
         logout,
         refreshProfile,

@@ -68,7 +68,7 @@ export const ReportProblemPage: React.FC<ReportProblemPageProps> = ({
   onComplaintCreated,
   onCancel,
 }) => {
-  const { user, userProfile } = useAuth();
+  const { user, userProfile, updateStudentId } = useAuth();
 
   const handleMyComplaints = onViewMyComplaints || onCancel || (() => {});
   const handleSubmitSuccess = (complaintId: string, docId: string) => {
@@ -90,6 +90,7 @@ export const ReportProblemPage: React.FC<ReportProblemPageProps> = ({
   const [category, setCategory] = useState<ProblemCategory>('Electrical');
   const [priority, setPriority] = useState<Priority>('Normal');
   const [description, setDescription] = useState<string>('');
+  const [rollNumberInput, setRollNumberInput] = useState<string>('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -143,7 +144,16 @@ export const ReportProblemPage: React.FC<ReportProblemPageProps> = ({
       const effectiveUid = userProfile?.uid || user?.uid || 'student_guest';
       const effectiveEmail = userProfile?.email || user?.email || 'student@smartcampus.edu';
       const effectiveName = userProfile?.name || user?.displayName || 'Campus Student';
-      const effectiveStudentId = userProfile?.studentId || 'STU-' + Math.floor(100000 + Math.random() * 900000);
+      const enteredRoll = rollNumberInput.trim().toUpperCase();
+      const effectiveStudentId = userProfile?.rollNo || userProfile?.studentId || (enteredRoll || 'Pending Assignment');
+
+      if (!userProfile?.studentId && !userProfile?.rollNo && enteredRoll && updateStudentId) {
+        try {
+          await updateStudentId(enteredRoll);
+        } catch {
+          // non-blocking
+        }
+      }
 
       const result = await createComplaint({
         studentUid: effectiveUid,
@@ -323,6 +333,26 @@ export const ReportProblemPage: React.FC<ReportProblemPageProps> = ({
               className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
             />
           </div>
+
+          {/* Student Roll Number (if not already set in profile) */}
+          {!userProfile?.studentId && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Student Roll / Registration ID</span>
+                </span>
+                <span className="text-[11px] font-normal text-slate-400">Optional</span>
+              </label>
+              <input
+                type="text"
+                value={rollNumberInput}
+                onChange={(e) => setRollNumberInput(e.target.value)}
+                placeholder="e.g. STU-2024-001 (will be saved to your profile)"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-mono focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+              />
+            </div>
+          )}
         </div>
 
         {/* 3. Category & Priority */}

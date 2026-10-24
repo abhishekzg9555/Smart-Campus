@@ -16,7 +16,6 @@ import {
   MapPin,
   Calendar,
   Sparkles,
-  Database,
   ChevronRight
 } from 'lucide-react';
 
@@ -24,7 +23,6 @@ interface AdminDashboardProps {
   complaints?: Complaint[];
   onNavigateToComplaints: (filter?: { priority?: string; status?: string }) => void;
   onNavigateToAnalytics: () => void;
-  onNavigateToDemoManager: () => void;
   onSelectComplaintToManage?: (docId: string) => void;
   onViewComplaint?: (complaint: Complaint) => void;
 }
@@ -33,7 +31,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   complaints = [],
   onNavigateToComplaints,
   onNavigateToAnalytics,
-  onNavigateToDemoManager,
   onSelectComplaintToManage,
   onViewComplaint,
 }) => {
@@ -106,15 +103,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           >
             <BarChart3 className="w-4 h-4 text-blue-400" />
             <span>View Analytics</span>
-          </button>
-          <button
-            type="button"
-            onClick={onNavigateToDemoManager}
-            className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs rounded-xl border border-slate-700 flex items-center gap-1.5 transition-colors"
-            title="Seed CEP Demo Data"
-          >
-            <Database className="w-4 h-4 text-amber-400" />
-            <span>Demo Data</span>
           </button>
         </div>
       </div>

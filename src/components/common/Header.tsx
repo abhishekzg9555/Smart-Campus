@@ -71,9 +71,6 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="font-bold text-sm sm:text-base tracking-tight text-white">
                   Smart Campus
                 </span>
-                <span className="hidden sm:inline-block bg-blue-500/20 text-blue-300 border border-blue-400/30 text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                  CEP Project
-                </span>
               </div>
               <p className="text-[11px] text-slate-400 hidden sm:block">
                 Infrastructure & Maintenance System

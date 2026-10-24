@@ -88,7 +88,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
         <div className="relative z-10 max-w-2xl">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 text-xs font-semibold uppercase tracking-wider mb-3">
             <Sparkles className="w-3.5 h-3.5 text-blue-300" />
-            <span>Community Engagement Program (CEP)</span>
+            <span>Campus Maintenance Portal</span>
           </div>
 
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">

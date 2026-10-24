@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, DEFAULT_ADMIN_EMAIL } from '../context/AuthContext';
+import { FirebaseAuthDiagnostic } from '../components/common/FirebaseAuthDiagnostic';
 import {
   GraduationCap,
   Lock,
@@ -13,7 +14,12 @@ import {
   Building2,
   Shield,
   Info,
+  ExternalLink,
+  Globe,
+  Phone,
+  Calendar,
 } from 'lucide-react';
+import { AcademicYear } from '../types';
 
 interface RegisterPageProps {
   onGoToLogin: () => void;
@@ -21,13 +27,15 @@ interface RegisterPageProps {
   onRegisterSuccess?: () => void;
 }
 
-const DEPARTMENTS = [
-  'CSE Department',
-  'Mechanical Department',
-  'Electrical Engineering',
-  'Civil Engineering',
-  'Information Technology',
-  'Electronics & Communication',
+const BRANCHES = [
+  'Computer Science & Engineering (CSE)',
+  'Information Technology (IT)',
+  'Electronics & Communication Engineering (ECE)',
+  'Electrical & Electronics Engineering (EEE)',
+  'Mechanical Engineering (ME)',
+  'Civil Engineering (CE)',
+  'Artificial Intelligence & Data Science (AI & DS)',
+  'Chemical Engineering',
   'Other',
 ];
 
@@ -36,20 +44,37 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
   onGoToHome,
   onRegisterSuccess,
 }) => {
-  const { registerStudent, signInWithGoogle, firebaseProjectId } = useAuth();
+  const {
+    registerStudent,
+    signInWithGoogle,
+    signInWithGoogleRedirect,
+    redirectError,
+    clearRedirectError,
+    isEmbeddedIframe,
+    firebaseProjectId,
+  } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [studentId, setStudentId] = useState('');
-  const [department, setDepartment] = useState('CSE Department');
+  const [branch, setBranch] = useState('Computer Science & Engineering (CSE)');
+  const [mobileNo, setMobileNo] = useState('');
+  const [academicYear, setAcademicYear] = useState<AcademicYear>('1st Year');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
+  React.useEffect(() => {
+    if (redirectError) {
+      setError(redirectError);
+    }
+  }, [redirectError]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    clearRedirectError();
 
     // Client-side validations
     if (!name.trim()) {
@@ -67,6 +92,17 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
       return;
     }
 
+    if (!mobileNo.trim()) {
+      setError('Please enter your Mobile Number.');
+      return;
+    }
+
+    const digitsOnly = mobileNo.replace(/\D/g, '');
+    if (digitsOnly.length < 10) {
+      setError('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
     if (password.length < 6) {
       setError('Password must be at least 6 characters in length.');
       return;
@@ -77,8 +113,17 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
       return;
     }
 
-    // Explicit security protection against unauthorized admin registration
-    if (email.trim().toLowerCase().includes('admin') || name.trim().toLowerCase().includes('admin')) {
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Explicit security protection against registering the master admin as a student
+    if (cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
+      setError(
+        `Registration Denied: ${DEFAULT_ADMIN_EMAIL} is the Campus Administrator account and cannot be registered as a student. Please log in using the Admin Login tab.`
+      );
+      return;
+    }
+
+    if (cleanEmail.includes('admin') || name.trim().toLowerCase().includes('admin')) {
       setError(
         'Admin accounts cannot be created via public student registration. Please use the Admin Portal.'
       );
@@ -87,7 +132,15 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
 
     setIsLoading(true);
     try {
-      await registerStudent(name.trim(), email.trim(), studentId.trim(), password, department);
+      await registerStudent(
+        name.trim(),
+        email.trim(),
+        studentId.trim(),
+        password,
+        branch,
+        mobileNo.trim(),
+        academicYear
+      );
       if (onRegisterSuccess) {
         onRegisterSuccess();
       }
@@ -99,18 +152,32 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
     }
   };
 
-  const handleGoogleSignUp = async () => {
+  const handleGoogleSignUpPopup = async () => {
     setError(null);
+    clearRedirectError();
     setIsGoogleLoading(true);
     try {
-      await signInWithGoogle('student');
-      if (onRegisterSuccess) {
+      const profile = await signInWithGoogle('student', false);
+      if (profile && onRegisterSuccess) {
         onRegisterSuccess();
       }
     } catch (err: any) {
       console.error('Google registration error:', err);
       setError(err.message || 'Google registration failed.');
     } finally {
+      setIsGoogleLoading(false);
+    }
+  };
+
+  const handleGoogleSignUpRedirect = async () => {
+    setError(null);
+    clearRedirectError();
+    setIsGoogleLoading(true);
+    try {
+      await signInWithGoogleRedirect('student');
+    } catch (err: any) {
+      console.error('Google redirect registration error:', err);
+      setError(err.message || 'Google redirect registration failed.');
       setIsGoogleLoading(false);
     }
   };
@@ -146,47 +213,81 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
         </div>
 
         <div className="p-6 sm:p-8 space-y-4">
+          {/* Error & Diagnostic Banner */}
           {error && (
-            <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2 animate-in fade-in duration-200">
-              <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
-              <div className="space-y-1">
-                <span className="leading-relaxed font-semibold">{error}</span>
-                {error.includes('disabled in your Firebase') && (
-                  <p className="text-[11px] text-red-800">
-                    Use <strong>Sign Up with Google</strong> below for 1-click registration without manual console setup!
-                  </p>
-                )}
+            <FirebaseAuthDiagnostic
+              error={error}
+              firebaseProjectId={firebaseProjectId}
+              onDismiss={() => {
+                setError(null);
+                clearRedirectError();
+              }}
+              onRetryRedirect={handleGoogleSignUpRedirect}
+            />
+          )}
+
+          {/* Embedded Iframe Notice */}
+          {isEmbeddedIframe && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-[11px] text-amber-900 space-y-1.5">
+              <div className="flex items-center gap-1.5 font-semibold text-amber-800">
+                <Globe className="w-3.5 h-3.5 text-amber-600" />
+                <span>Embedded Preview Environment Detected</span>
               </div>
+              <p className="text-slate-600">
+                Browsers restrict Google OAuth popups and redirects inside embedded frames. If Google sign-up gets blocked, open the app in a standalone tab.
+              </p>
+              <a
+                href={window.location.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-bold underline text-[11px] pt-0.5"
+              >
+                <ExternalLink className="w-3 h-3" />
+                Open app in top-level browser tab
+              </a>
             </div>
           )}
 
-          {/* Google 1-Click Sign-Up */}
-          <button
-            type="button"
-            onClick={handleGoogleSignUp}
-            disabled={isGoogleLoading || isLoading}
-            className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 shadow-xs flex items-center justify-center gap-2.5 transition-all hover:border-slate-400 disabled:opacity-50"
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24">
-              <path
-                fill="#4285F4"
-                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-              />
-              <path
-                fill="#34A853"
-                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-              />
-              <path
-                fill="#FBBC05"
-                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-              />
-              <path
-                fill="#EA4335"
-                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-              />
-            </svg>
-            <span>{isGoogleLoading ? 'Signing up with Google...' : 'Sign Up with Google (Instant)'}</span>
-          </button>
+          {/* Google 1-Click Sign-Up Options */}
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={handleGoogleSignUpPopup}
+              disabled={isGoogleLoading || isLoading}
+              className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 shadow-xs flex items-center justify-center gap-2.5 transition-all hover:border-slate-400 disabled:opacity-50"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24">
+                <path
+                  fill="#4285F4"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                />
+              </svg>
+              <span>{isGoogleLoading ? 'Signing up with Google...' : 'Sign Up with Google (Popup)'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleGoogleSignUpRedirect}
+              disabled={isGoogleLoading || isLoading}
+              className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-[11px] font-semibold text-slate-700 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+              title="Full-page redirect sign-up via Google"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+              <span>Or Sign Up with Redirect (Full Page)</span>
+            </button>
+          </div>
 
           <div className="flex items-center my-2">
             <div className="flex-1 border-t border-slate-200"></div>
@@ -204,8 +305,10 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
               onClick={() => {
                 setName('Priya Patel');
                 setEmail(`priya.${Math.floor(100 + Math.random() * 900)}@smartcampus.edu`);
-                setStudentId(`STU-2024-${Math.floor(100 + Math.random() * 900)}`);
-                setDepartment('CSE Department');
+                setStudentId(`21CS${Math.floor(100 + Math.random() * 900)}`);
+                setBranch('Computer Science & Engineering (CSE)');
+                setMobileNo('9876543210');
+                setAcademicYear('2nd Year');
                 setPassword('CampusPass123!');
                 setConfirmPassword('CampusPass123!');
                 setError(null);
@@ -250,11 +353,26 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                     className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
                   />
                 </div>
+                {email.trim().toLowerCase() === DEFAULT_ADMIN_EMAIL.toLowerCase() && (
+                  <div className="mt-2 p-2 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-900 flex items-start gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600 mt-0.5" />
+                    <div>
+                      <p className="font-semibold">{DEFAULT_ADMIN_EMAIL} is the Campus Administrator account.</p>
+                      <button
+                        type="button"
+                        onClick={onGoToLogin}
+                        className="text-[11px] font-bold text-red-700 hover:text-red-900 underline mt-0.5"
+                      >
+                        Go to Admin Login &rarr;
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                  Student ID / Roll No.
+                  Student Roll No. *
                 </label>
                 <div className="relative">
                   <Hash className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -263,29 +381,66 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                     required
                     value={studentId}
                     onChange={(e) => setStudentId(e.target.value)}
-                    placeholder="STU-2024-042"
+                    placeholder="21CS042"
                     className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:bg-white uppercase font-mono transition-colors"
                   />
                 </div>
               </div>
             </div>
 
+            {/* Branch Name */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 flex items-center gap-1.5">
                 <Building2 className="w-3.5 h-3.5 text-blue-600" />
-                <span>Department</span>
+                <span>Branch Name *</span>
               </label>
               <select
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
+                value={branch}
+                onChange={(e) => setBranch(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-colors cursor-pointer"
               >
-                {DEPARTMENTS.map((dept) => (
-                  <option key={dept} value={dept}>
-                    {dept}
+                {BRANCHES.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
                   </option>
                 ))}
               </select>
+            </div>
+
+            {/* Mobile Number & Academic Year */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Mobile No. *</span>
+                </label>
+                <input
+                  type="tel"
+                  required
+                  value={mobileNo}
+                  onChange={(e) => setMobileNo(e.target.value)}
+                  placeholder="9876543210"
+                  maxLength={15}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Academic Year *</span>
+                </label>
+                <select
+                  value={academicYear}
+                  onChange={(e) => setAcademicYear(e.target.value as AcademicYear)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:bg-white transition-colors cursor-pointer"
+                >
+                  <option value="1st Year">1st Year (First Year)</option>
+                  <option value="2nd Year">2nd Year (Second Year)</option>
+                  <option value="3rd Year">3rd Year (Third Year)</option>
+                  <option value="4th Year">4th Year (Fourth Year)</option>
+                </select>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
